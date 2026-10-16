@@ -24,7 +24,8 @@ public sealed class ClipboardPasteService
             KeyboardInput(VkV, KeyUp),
             KeyboardInput(VkControl, KeyUp)
         };
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+        if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) != inputs.Length)
+            throw new InvalidOperationException("Automatisches Einfügen war nicht möglich. Der Text liegt in der Zwischenablage; bitte Strg+V verwenden.");
     }
 
     private static Input KeyboardInput(ushort key, uint flags) => new()
@@ -53,7 +54,7 @@ public sealed class ClipboardPasteService
         public InputUnion Data;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
     private struct InputUnion
     {
         [FieldOffset(0)]

@@ -1,0 +1,4 @@
+# Conversation mode
+Approved by user on 2026-10-16: simultaneous microphone and computer audio, source labels, relative timestamps, all local, background development with no screen automation.
+Separate tracks preserve source attribution. Selectable render device uses WASAPI loopback, microphone uses existing selection. Silence gaps must be preserved. Stop first closes both tracks, then local Whisper yields timestamped segments, merged chronologically. A dedicated window displays results and saves Markdown under LocalAppData/BlitztextLocal/conversations. No automatic paste or clipboard replacement.
+One capture/inference operation at a time. Failure reports explicitly and cleans temporary audio. Window close cannot silently abandon recording. Install updated build without UI automation; preserve taskbar shortcut. No speaker identity inference. Headphones reduce acoustic duplication.

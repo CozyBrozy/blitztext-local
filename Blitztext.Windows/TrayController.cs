@@ -2,7 +2,8 @@ using System.Drawing;
 using System.IO;
 using System.Windows;
 using Blitztext.Core.Models;
-using Blitztext.Core.Security;
+using Blitztext.Core.Conversation;
+
 using Blitztext.Core.Settings;
 using Blitztext.Core.Workflow;
 using Blitztext.Windows.Platform;
@@ -14,7 +15,11 @@ public sealed class TrayController : IDisposable
 {
     private readonly AppSettings settings;
     private readonly SettingsStore settingsStore;
-    private readonly ApiKeyStore apiKeyStore;
+    private bool isProcessing;
+    private bool conversationBusy;
+    private ConversationWindow? conversationWindow;
+    private readonly ConversationProcessor conversationProcessor;
+    public bool IsBusy => conversationBusy || isProcessing || activeWorkflow is not null;
     private readonly WorkflowRunner workflowRunner;
     private readonly Forms.NotifyIcon notifyIcon;
     private readonly HotkeyManager hotkeyManager = new();
@@ -29,18 +34,18 @@ public sealed class TrayController : IDisposable
     public TrayController(
         AppSettings settings,
         SettingsStore settingsStore,
-        ApiKeyStore apiKeyStore,
-        WorkflowRunner workflowRunner)
+        WorkflowRunner workflowRunner, ConversationProcessor conversationProcessor)
     {
         this.settings = settings;
         this.settingsStore = settingsStore;
-        this.apiKeyStore = apiKeyStore;
+
         this.workflowRunner = workflowRunner;
+        this.conversationProcessor = conversationProcessor;
 
         notifyIcon = new Forms.NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "Blitztext",
+            Text = "Blitztext Lokal",
             Visible = false,
             ContextMenuStrip = BuildMenu()
         };
@@ -49,34 +54,42 @@ public sealed class TrayController : IDisposable
         hotkeyManager.HotkeyReleased += OnHotkeyReleased;
     }
 
-    public void Start()
+    public void Start(bool background = false)
     {
         AppLog.Write("TrayController.Start");
         notifyIcon.Visible = true;
         RegisterHotkeys();
         SetStatus("Blitztext bereit");
-        ShowFloatingToolbar();
-        ShowSettings();
+        if (!background)
+        {
+            ShowFloatingToolbar();
+            ShowSettings();
+        }
     }
 
     private Forms.ContextMenuStrip BuildMenu()
     {
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Blitztext", null, (_, _) => ToggleWorkflow(WorkflowType.Transcription));
-        menu.Items.Add("Text verbessern", null, (_, _) => ToggleWorkflow(WorkflowType.TextImprover));
-        menu.Items.Add("Ärger beruhigen", null, (_, _) => ToggleWorkflow(WorkflowType.DampfAblassen));
-        menu.Items.Add("Emoji ergänzen", null, (_, _) => ToggleWorkflow(WorkflowType.EmojiText));
+        menu.Items.Add("Gesprächsmodus", null, (_, _) => ShowConversation());
+
+
+
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Desktop-Leiste anzeigen", null, (_, _) => ShowFloatingToolbar());
         menu.Items.Add("Einstellungen", null, (_, _) => ShowSettings());
-        menu.Items.Add("Beenden", null, (_, _) => System.Windows.Application.Current.Shutdown());
+        menu.Items.Add("Beenden", null, (_, _) =>
+        {
+            if (IsBusy) { notifyIcon.ShowBalloonTip(3000, "Blitztext", "Bitte zuerst Aufnahme und Verarbeitung beenden.", Forms.ToolTipIcon.Info); return; }
+            System.Windows.Application.Current.Shutdown();
+        });
         return menu;
     }
 
     private void RegisterHotkeys()
     {
         hotkeyManager.UnregisterAll();
-        foreach (var (type, hotkey) in settings.WorkflowHotkeys)
+        foreach (var (type, hotkey) in settings.WorkflowHotkeys.Where(p => p.Key == WorkflowType.Transcription))
         {
             if (!hotkeyManager.TryRegister(type, hotkey, out var error))
             {
@@ -88,6 +101,7 @@ public sealed class TrayController : IDisposable
     private void OnHotkeyPressed(object? sender, WorkflowType type)
     {
         AppLog.Write($"HotkeyPressed type={type} mode={settings.HotkeyMode} active={activeWorkflow}");
+        if (isProcessing || conversationBusy) return;
         if (settings.HotkeyMode == HotkeyMode.Hold)
         {
             if (activeWorkflow is null)
@@ -111,7 +125,7 @@ public sealed class TrayController : IDisposable
 
     private void ToggleWorkflow(WorkflowType type)
     {
-        AppLog.Write($"ToggleWorkflow type={type} active={activeWorkflow}");
+        if (isProcessing || conversationBusy) return;
         if (activeWorkflow is null)
         {
             StartRecording(type);
@@ -130,14 +144,13 @@ public sealed class TrayController : IDisposable
 
     private void StartRecording(WorkflowType type)
     {
-        AppLog.Write($"StartRecording requested type={type} apiConfigured={apiKeyStore.IsConfigured}");
-        if (!apiKeyStore.IsConfigured)
+        if (isProcessing || conversationBusy || type != WorkflowType.Transcription) return;
+        if (!File.Exists(App.ModelPath))
         {
             ShowSettings();
-            notifyIcon.ShowBalloonTip(4000, "OpenAI API Key fehlt", "Bitte hinterlege deinen lokalen OpenAI API Key.", Forms.ToolTipIcon.Info);
+            notifyIcon.ShowBalloonTip(4000, "Modell fehlt", "Das lokale Whisper-Modell fehlt.", Forms.ToolTipIcon.Warning);
             return;
         }
-
         try
         {
             processingCts?.Cancel();
@@ -164,12 +177,14 @@ public sealed class TrayController : IDisposable
             return;
         }
 
+        if (isProcessing) return;
+        isProcessing = true;
         var token = processingCts?.Token ?? CancellationToken.None;
         string? audioPath = null;
         try
         {
             AppLog.Write($"StopAndProcess start type={type}");
-            var recording = audioRecorder.Stop();
+            var recording = await audioRecorder.StopAsync();
             audioPath = recording.Path;
             SetStatus($"{type.DisplayName()}: wird verarbeitet");
             var result = await workflowRunner.ProcessAsync(type, recording.Path, recording.Duration, token);
@@ -198,6 +213,7 @@ public sealed class TrayController : IDisposable
         finally
         {
             activeWorkflow = null;
+            isProcessing = false;
         }
     }
 
@@ -209,7 +225,7 @@ public sealed class TrayController : IDisposable
         SetStatus("Blitztext bereit");
     }
 
-    private void ShowSettings()
+    public void ShowSettings()
     {
         AppLog.Write("ShowSettings requested.");
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -218,7 +234,8 @@ public sealed class TrayController : IDisposable
             if (settingsWindow is null)
             {
                 AppLog.Write("Creating SettingsWindow.");
-                settingsWindow = new SettingsWindow(settings, settingsStore, apiKeyStore);
+                settingsWindow = new SettingsWindow(settings, settingsStore);
+                settingsWindow.ConversationRequested += (_, _) => ShowConversation();
                 settingsWindow.SettingsSaved += (_, _) =>
                 {
                     RegisterHotkeys();
@@ -270,6 +287,20 @@ public sealed class TrayController : IDisposable
             floatingToolbarWindow.Topmost = true;
             floatingToolbarWindow.Activate();
         });
+    }
+
+    private void ShowConversation()
+    {
+        if (conversationWindow is null)
+        {
+            conversationWindow = new ConversationWindow(settings, conversationProcessor,
+                () => { if (IsBusy) return false; conversationBusy = true; SetStatus("Gespräch: Aufnahme läuft"); return true; },
+                () => { conversationBusy = false; SetStatus("Blitztext bereit"); });
+            conversationWindow.Closed += (_, _) => conversationWindow = null;
+        }
+        conversationWindow.Show();
+        conversationWindow.WindowState = WindowState.Normal;
+        conversationWindow.Activate();
     }
 
     private void SetStatus(string text)

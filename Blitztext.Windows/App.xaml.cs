@@ -1,57 +1,66 @@
-using System.Net.Http;
+using System.IO;
 using System.Windows;
-using Blitztext.Core.OpenAI;
-using Blitztext.Core.Security;
 using Blitztext.Core.Settings;
+using Blitztext.Core.Transcription;
 using Blitztext.Core.Workflow;
-
+using Blitztext.Core.Conversation;
 namespace Blitztext.Windows;
-
 public partial class App : System.Windows.Application
 {
     private TrayController? trayController;
-
+    private LocalWhisperTranscriber? transcriber;
+    private LocalWhisperTranscriber? conversationTranscriber;
+    public static string ConversationModelPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "BlitztextLocal", "models", "ggml-base.bin");
+    public static string ModelPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "BlitztextLocal", "models", "ggml-small.bin");
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        var mutex = new System.Threading.Mutex(true, "Local\\BlitztextLocal", out var created);
+        if (!created)
+        {
+            try { using var existing = EventWaitHandle.OpenExisting("Local\\BlitztextLocalShow"); existing.Set(); }
+            catch (WaitHandleCannotBeOpenedException) { }
+            mutex.Dispose();
+            Shutdown();
+            return;
+        }
+        showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\BlitztextLocalShow");
+        showRegistration = ThreadPool.RegisterWaitForSingleObject(showEvent,
+            (_, _) => Dispatcher.BeginInvoke(new Action(() => trayController?.ShowSettings())), null, -1, false);
+        this.instanceMutex = mutex;
         try
         {
-            AppLog.Write("OnStartup begin");
-
-            var settingsStore = new SettingsStore();
-            AppLog.Write("SettingsStore created.");
-            var settings = await settingsStore.LoadAsync();
-            AppLog.Write("Settings loaded.");
-            var apiKeyStore = new ApiKeyStore();
-            AppLog.Write("ApiKeyStore created.");
-            var openAIClient = new OpenAIClient(new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(90)
-            });
-            AppLog.Write("OpenAIClient created.");
-            var runner = new WorkflowRunner(openAIClient, apiKeyStore, () => settings);
-            AppLog.Write("WorkflowRunner created.");
-
-            trayController = new TrayController(
-                settings,
-                settingsStore,
-                apiKeyStore,
-                runner);
-            AppLog.Write("TrayController created.");
-            trayController.Start();
-            AppLog.Write("TrayController started.");
+            var store = new SettingsStore(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "BlitztextLocal", "settings.json"));
+            var settings = await store.LoadAsync();
+            transcriber = new LocalWhisperTranscriber(ModelPath);
+            var runner = new WorkflowRunner(transcriber, () => settings);
+            conversationTranscriber = new LocalWhisperTranscriber(ConversationModelPath);
+            trayController = new TrayController(settings, store, runner, new ConversationProcessor(conversationTranscriber));
+            trayController.Start(e.Args.Contains("--background"));
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Startup exception: {ex}");
-            throw;
+            AppLog.Write("Startup failed: " + ex);
+            if (!e.Args.Contains("--background")) System.Windows.MessageBox.Show(ex.Message, "Blitztext Lokal");
+            Shutdown();
         }
     }
-
+    private System.Threading.Mutex? instanceMutex;
+    private EventWaitHandle? showEvent;
+    private RegisteredWaitHandle? showRegistration;
     protected override void OnExit(ExitEventArgs e)
     {
-        AppLog.Write("OnExit");
         trayController?.Dispose();
+        // Native inference can still be cancelling; process exit releases its resources.
+        showRegistration?.Unregister(null);
+        showEvent?.Dispose();
+        instanceMutex?.Dispose();
         base.OnExit(e);
     }
 }

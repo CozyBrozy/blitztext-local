@@ -10,6 +10,7 @@ public sealed class AudioRecorder : IDisposable
 {
     private WaveInEvent? capture;
     private WaveFileWriter? writer;
+    private TaskCompletionSource? stopped;
     private DateTimeOffset startedAt;
     private string? currentPath;
 
@@ -46,17 +47,19 @@ public sealed class AudioRecorder : IDisposable
         };
         AppLog.Write($"AudioRecorder.Start deviceCount={WaveInEvent.DeviceCount} device={deviceNumber} path={currentPath}");
         writer = new WaveFileWriter(currentPath, capture.WaveFormat);
+        stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         capture.DataAvailable += (_, e) => writer?.Write(e.Buffer, 0, e.BytesRecorded);
-        capture.RecordingStopped += (_, _) =>
+        capture.RecordingStopped += (_, stoppedEvent) =>
         {
             FinishRecordingResources();
+            if (stoppedEvent.Exception is not null) stopped?.TrySetException(stoppedEvent.Exception); else stopped?.TrySetResult();
         };
         startedAt = DateTimeOffset.UtcNow;
         capture.StartRecording();
         AppLog.Write("AudioRecorder.StartRecording returned.");
     }
 
-    public RecordingResult Stop()
+    public async Task<RecordingResult> StopAsync()
     {
         if (capture is null || currentPath is null)
         {
@@ -65,8 +68,9 @@ public sealed class AudioRecorder : IDisposable
 
         var path = currentPath;
         var duration = DateTimeOffset.UtcNow - startedAt;
+        var finished = stopped!.Task;
         capture.StopRecording();
-        FinishRecordingResources();
+        await finished.WaitAsync(TimeSpan.FromSeconds(10));
         currentPath = null;
         var length = File.Exists(path) ? new FileInfo(path).Length : 0;
         AppLog.Write($"AudioRecorder.Stop path={path} durationMs={duration.TotalMilliseconds:N0} bytes={length}");

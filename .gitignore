@@ -13,3 +13,13 @@ publish/
 openai.key
 settings.json
 blitztext.log
+dist/
+.setup-cache/
+models/
+app/
+conversations/
+*.wav
+*.mp3
+*.bin
+*.zip
+INSTALLATION.json

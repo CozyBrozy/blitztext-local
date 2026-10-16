@@ -1,100 +1,64 @@
-using Blitztext.Core.OpenAI;
-using Blitztext.Core.Security;
-using Blitztext.Core.Settings;
-using Blitztext.Core.Workflow;
 using Blitztext.Core.Models;
-
+using Blitztext.Core.Settings;
+using Blitztext.Core.Transcription;
+using Blitztext.Core.Workflow;
 namespace Blitztext.Tests;
-
 public sealed class WorkflowRunnerTests
 {
     [Fact]
-    public async Task ProcessAsync_Transcription_CopiesTranscribedTextAndDeletesAudio()
+    public async Task LocalTranscriptionNeedsNoKeyAndDeletesAudio()
     {
-        var audioPath = CreateTempAudio();
-        var runner = CreateRunner(new FakeOpenAIClient(" hallo welt ", "unused"), out _);
-
-        var result = await runner.ProcessAsync(WorkflowType.Transcription, audioPath, TimeSpan.FromSeconds(2), CancellationToken.None);
-
-        Assert.Equal("hallo welt", result);
-        Assert.False(File.Exists(audioPath));
+        var path = Audio();
+        var runner = new WorkflowRunner(new FakeTranscriber(), () => new AppSettings());
+        Assert.Equal("Hallo Welt.", await runner.ProcessAsync(WorkflowType.Transcription, path, TimeSpan.FromSeconds(3), default));
+        Assert.False(File.Exists(path));
     }
-
     [Fact]
-    public async Task ProcessAsync_TextImprover_TranscribesThenRewrites()
+    public async Task FailureDeletesAudio()
     {
-        var audioPath = CreateTempAudio();
-        var client = new FakeOpenAIClient("hallo welt", "Hallo Welt.");
-        var runner = CreateRunner(client, out _);
-
-        var result = await runner.ProcessAsync(WorkflowType.TextImprover, audioPath, TimeSpan.FromSeconds(2), CancellationToken.None);
-
-        Assert.Equal("Hallo Welt.", result);
-        Assert.Contains("Eigennamen", client.LastRewritePrompt);
+        var path = Audio();
+        var runner = new WorkflowRunner(new FakeTranscriber(true), () => new AppSettings());
+        await Assert.ThrowsAsync<IOException>(() => runner.ProcessAsync(WorkflowType.Transcription, path, TimeSpan.FromSeconds(3), default));
+        Assert.False(File.Exists(path));
     }
-
     [Fact]
-    public async Task ProcessAsync_WhenApiKeyMissing_ReturnsHelpfulError()
+    public async Task CancellationDeletesAudio()
     {
-        var audioPath = CreateTempAudio();
-        var settings = new AppSettings();
-        var keyPath = Path.Combine(Path.GetTempPath(), $"blitztext-key-{Guid.NewGuid():N}.bin");
-        var runner = new WorkflowRunner(new FakeOpenAIClient("x", "x"), new ApiKeyStore(keyPath), () => settings);
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            runner.ProcessAsync(WorkflowType.Transcription, audioPath, TimeSpan.FromSeconds(2), CancellationToken.None));
-
-        Assert.Contains("OpenAI API Key fehlt", ex.Message);
+        var path = Audio();
+        var runner = new WorkflowRunner(new FakeTranscriber(), () => new AppSettings());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.ProcessAsync(WorkflowType.Transcription, path, TimeSpan.FromSeconds(3), new CancellationToken(true)));
+        Assert.False(File.Exists(path));
     }
-
-    private static WorkflowRunner CreateRunner(FakeOpenAIClient client, out AppSettings settings)
+    [Fact]
+    public async Task RewriteIsRejectedWithoutCallingEngine()
     {
-        var localSettings = new AppSettings
-        {
-            CustomTerms = ["Contoso"]
-        };
-        settings = localSettings;
-        var keyPath = Path.Combine(Path.GetTempPath(), $"blitztext-key-{Guid.NewGuid():N}.bin");
-        var keyStore = new ApiKeyStore(keyPath);
-        keyStore.Save("test-openai-key");
-        return new WorkflowRunner(client, keyStore, () => localSettings);
+        var path = Audio();
+        var runner = new WorkflowRunner(new FakeTranscriber(true), () => new AppSettings());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runner.ProcessAsync(WorkflowType.TextImprover, path, TimeSpan.FromSeconds(3), default));
+        Assert.False(File.Exists(path));
     }
-
-    private static string CreateTempAudio()
+    [Fact]
+    public async Task MissingModelFailsLocally()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"blitztext-test-{Guid.NewGuid():N}.wav");
-        File.WriteAllBytes(path, [1, 2, 3, 4]);
+        var path = Audio();
+        using var engine = new LocalWhisperTranscriber(Path.Combine(Path.GetTempPath(), Guid.NewGuid()+".bin"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TranscribeAsync(path, "de", default));
+        File.Delete(path);
+    }
+    private static string Audio()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid()+".wav");
+        File.WriteAllBytes(path, [0,1,2]);
         return path;
     }
-
-    private sealed class FakeOpenAIClient(string transcription, string rewrite) : IOpenAIClient
+    private sealed class FakeTranscriber(bool fail = false) : ILocalTranscriber
     {
-        public string LastRewritePrompt { get; private set; } = "";
-
-        public Task<string> TranscribeAsync(
-            string audioPath,
-            string apiKey,
-            string language,
-            IReadOnlyList<string> customTerms,
-            string model,
-            CancellationToken cancellationToken)
+        public Task<string> TranscribeAsync(string audioPath, string language, CancellationToken token)
         {
             Assert.True(File.Exists(audioPath));
-            Assert.Equal("test-openai-key", apiKey);
-            Assert.Contains("Contoso", customTerms);
-            return Task.FromResult(transcription);
-        }
-
-        public Task<string> RewriteAsync(
-            string text,
-            string apiKey,
-            string systemPrompt,
-            string model,
-            double temperature,
-            CancellationToken cancellationToken)
-        {
-            LastRewritePrompt = systemPrompt;
-            return Task.FromResult(rewrite);
+            if (fail) throw new IOException("Test failure");
+            Assert.Equal("de", language);
+            return Task.FromResult(" Hallo Welt. ");
         }
     }
 }

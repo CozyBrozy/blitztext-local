@@ -1,14 +1,8 @@
 @echo off
 setlocal
-set "APP=%~dp0publish\Blitztext.Windows-self-contained\Blitztext.Windows.exe"
-
-taskkill /IM Blitztext.Windows.exe /F >nul 2>nul
-
+set "APP=%LOCALAPPDATA%\Programs\BlitztextLocal\Blitztext.Windows.exe"
 if not exist "%APP%" (
-  echo Blitztext wurde noch nicht gebaut: "%APP%"
-  echo Bitte zuerst dotnet publish ausfuehren.
-  pause
+  echo Bitte zuerst setup.ps1 ausfuehren. Siehe ANLEITUNG.md.
   exit /b 1
 )
-
 start "" "%APP%"

@@ -1,85 +1,39 @@
-# Blitztext for Windows
+# Blitztext Lokal fuer Windows
 
-Blitztext for Windows is an experimental native Windows app for turning speech into text. It is a .NET 8 WPF tray app inspired by the MIT-licensed macOS preview [cmagnussen/blitztext-app](https://github.com/cmagnussen/blitztext-app), but rebuilt for Windows.
+Lokal diktieren und Gespraeche mit Mikrofon und Computerton live transkribieren. Ohne API-Key.
 
-## Funktionen
+**Fuer Codex: [ANLEITUNG.md](ANLEITUNG.md) lesen und die Einrichtung ausfuehren.**
 
-- **Blitztext**: Sprache aufnehmen und transkribieren.
-- **Text verbessern**: Sprache aufnehmen, transkribieren und als saubereren Text formulieren.
-- **Ärger beruhigen**: emotional gesprochene Gedanken in eine klare, respektvolle Nachricht umwandeln.
-- **Emoji ergänzen**: Text transkribieren und passende Emojis ergänzen.
-- **Desktop-Leiste**: kleine schwebende Leiste mit drei Aufnahme-Buttons.
-- **Hotkeys**: frei konfigurierbare globale Tastenkombinationen.
-- **Mikrofonwahl**: Aufnahmegerät in den Einstellungen auswählen.
+Dem Kollegen reicht dieser Auftrag:
 
-## Wichtig
+> Richte https://github.com/CozyBrozy/blitztext-local auf meinem Windows-PC ein. Lies ANLEITUNG.md und fuehre die Einrichtung samt Whisper-Modellen und Pruefungen selbst aus. Arbeite im Hintergrund ohne Bildschirmsteuerung. Keine Audioaufnahme zum Testen starten.
 
-- Windows only.
-- Kein eigener Server, keine Serveradresse.
-- Jeder Benutzer trägt seinen eigenen OpenAI API Key lokal in der App ein.
-- Audio und Text werden direkt vom eigenen PC an die OpenAI API gesendet.
-- Der OpenAI API Key wird lokal per Windows DPAPI unter dem Benutzerkonto gespeichert.
-- Der API Key wird nicht in `settings.json`, nicht im Repo und nicht im Build-Output gespeichert.
-- Lokale/offline Transkription ist in diesem MVP noch nicht enthalten.
+Das Repository ist privat: Der Kollege braucht Zugriff mit seinem eigenen GitHub-Konto.
 
-## Voraussetzungen
+## Installation
 
-- Windows 10/11
-- Für Entwicklung/Build: [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Für die Nutzung: eigener OpenAI API Key mit Zugriff auf Audio-Transkription und Chat-Completions/Chat-Modelle
+- **Fertiges Paket inklusive Whisper:** [Releases](https://github.com/CozyBrozy/blitztext-local/releases), ZIP herunterladen und entpacken, setup.ps1 ausfuehren.
+- **Aus Quellcode:** Im Repository pwsh -NoProfile -File .\setup.ps1 -FromSource -InstallPrerequisites ausfuehren.
+- **Einrichtung durch Codex:** Vollstaendige Befehle, Erfolgskriterien und Fehlerbehandlung in ANLEITUNG.md.
 
-## Starten als Benutzer
+Windows 11 x64 mit AVX2, Mikrofon; Visual C++ x64 Runtime wird benoetigt. Bei der ersten Einrichtung werden bei Bedarf Komponenten heruntergeladen. Die fertige Transkription laeuft offline.
 
-Wenn bereits ein Build vorhanden ist:
+## Bedienung
 
-```powershell
-.\Start-Blitztext.cmd
-```
+**Diktieren:** Blitztext Lokal ueber Startmenue starten, Einstellungen schliessen, Textfeld fokussieren. Strg+Umschalt+Leertaste startet und stoppt die Mikrofonaufnahme. Das Ergebnis wird eingefuegt.
 
-Oder direkt:
+**Gespraech:** In den Einstellungen Mikrofon und passende Computer-Audioausgabe waehlen, Gespraechsmodus oeffnen. Du bezeichnet das Mikrofon, Andere Teilnehmer die gemeinsame Computerquelle. Neue Textabschnitte erscheinen mit naeherungsweisen Zeitstempeln und werden laufend in einer Markdown-Datei gespeichert. Stoppen ergaenzt den Rest. Keine individuelle Sprechererkennung, kein automatisches Einfuegen des Gespraechs.
 
-```powershell
-.\publish\Blitztext.Windows-self-contained\Blitztext.Windows.exe
-```
+Teams kann ein anderes Ausgabegeraet als Windows verwenden. Das ausgewaehlte Geraet muss die Stimmen wirklich wiedergeben. Kopfhörer verhindern moeglichst, dass der Computerton auch im Mikrofon landet.
 
-Beim ersten Start:
+## Daten und Modellwahl
 
-1. OpenAI API Key in den Einstellungen speichern.
-2. Mikrofon auswählen.
-3. Entweder Desktop-Leiste verwenden oder Hotkeys konfigurieren.
+Gespraeche und Modelle liegen unter %LOCALAPPDATA%/BlitztextLocal, die App unter %LOCALAPPDATA%/Programs/BlitztextLocal. Keine Audio-Uploads und kein Cloud-Fallback. Temporaere Audiospuren werden nach Verarbeitung bestmoeglich geloescht; ein erzwungener Prozessabbruch kann temporaere Dateien hinterlassen.
 
-## Bauen aus dem Repo
+Whisper Small fuer Diktate, schnelleres Whisper Base fuer Live-Gespraeche. Base kann weniger genau sein. Verarbeitung erfolgt abschnittsweise bei Pausen oder nach ca. acht Sekunden Dauersprache plus Rechenzeit. Bei hoher Last kann Rueckstand entstehen.
 
-```powershell
-dotnet restore
-dotnet test
-dotnet publish .\Blitztext.Windows\Blitztext.Windows.csproj -c Release -r win-x64 --self-contained true -o .\publish\Blitztext.Windows-self-contained
-```
+## Herkunft
 
-Danach starten:
+Eigenstaendige Anpassung von [echobrain-de/blitztext](https://github.com/echobrain-de/blitztext), inspiriert von [Christoph Magnussen / Blackboat](https://github.com/cmagnussen/blitztext-app). Keine offizielle Blackboat-Windows-Version. MIT-Lizenz und Herkunftshinweise bleiben erhalten: [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-```powershell
-.\publish\Blitztext.Windows-self-contained\Blitztext.Windows.exe
-```
-
-Optional eine Desktop-Verknüpfung erstellen:
-
-```powershell
-.\Install-Blitztext-Shortcut.cmd
-```
-
-## Hotkeys
-
-Standardwerte:
-
-- `Ctrl+Shift+Space`: Blitztext
-- `Ctrl+Shift+1`: Text verbessern
-- `Ctrl+Shift+2`: Ärger beruhigen
-- `Ctrl+Shift+3`: Emoji ergänzen
-
-In den Einstellungen können Hotkeys neu aufgenommen werden: ins Feld klicken, gewünschte Kombination drücken, speichern.
-
-
-## Attribution
-
-Die Idee, Workflow-Namen und Prompt-Richtung sind vom macOS-Projekt [cmagnussen/blitztext-app](https://github.com/cmagnussen/blitztext-app) inspiriert. Diese Windows-Codebasis ist ein nativer Neubau, weil das Original SwiftUI, AppKit, macOS Keychain, CoreGraphics-Paste-Events und WhisperKit/CoreML verwendet.
+26 automatisierte Tests und synthetische lokale Whisper-Tests bestanden. Reale Mikrofon- und Meetingtests muss der jeweilige Benutzer mit seinen Geraeten durchfuehren.

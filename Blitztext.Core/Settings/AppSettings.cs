@@ -4,6 +4,7 @@ namespace Blitztext.Core.Settings;
 
 public sealed class AppSettings
 {
+    public string ConversationOutputDeviceId { get; set; } = "";
     public string Language { get; set; } = "de";
     public HotkeyMode HotkeyMode { get; set; } = HotkeyMode.Toggle;
     public Dictionary<WorkflowType, string> WorkflowHotkeys { get; set; } = DefaultHotkeys();
