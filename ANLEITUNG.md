@@ -14,7 +14,7 @@ Die App soll auf dem PC des aktuellen Benutzers einsatzbereit sein, inklusive be
 
 Repository: `https://github.com/CozyBrozy/blitztext-local`
 
-Das Repository ist privat. Der Benutzer muss von CozyBrozy als Collaborator freigeschaltet und in seinem eigenen GitHub-Konto angemeldet sein. Wenn der Zugriff fehlt, genau diese fehlende Voraussetzung melden. Keine fremden Zugangsdaten anfordern und keine private Sichtbarkeit umgehen.
+Das Repository ist oeffentlich. Der Download benoetigt keine Anmeldung. Bei einem Netzwerk- oder Zugriffsfehler diesen konkret melden; keine fremden Zugangsdaten anfordern.
 
 Wenn der Quellcode noch nicht lokal liegt:
 
@@ -40,16 +40,17 @@ winget install --id Microsoft.PowerShell --exact --source winget --silent --acce
 
 Danach `pwsh.exe` ueber den tatsaechlichen Installationspfad oder eine neue Shell verwenden. Eine verlangte Windows-Adminfreigabe muss der Benutzer selbst erledigen. Keine ExecutionPolicy aendern und keine Sperre umgehen. Bei einer verbindlichen Unternehmensrichtlinie, die auch PowerShell 7 sperrt, den konkreten Blocker melden.
 
-Das Release `v0.1.0` enthaelt `Blitztext-Lokal-Windows-x64.zip` mit fertiger App, .NET-Laufzeit, Whisper Small und Whisper Base. Modelle liegen absichtlich im Release-Asset statt in der Git-Historie. Keine persoenlichen Einstellungen oder Gespraeche sind enthalten.
+Das Release `v0.1.1` enthaelt `Blitztext-Lokal-Windows-x64.zip` mit fertiger App, .NET-Laufzeit, Whisper Small und Whisper Base. Modelle liegen absichtlich im Release-Asset statt in der Git-Historie. Keine persoenlichen Einstellungen oder Gespraeche sind enthalten.
 
-Wenn `gh` verfuegbar und angemeldet ist, lade und pruefe das Paket:
+Lade und pruefe das oeffentliche Paket ohne GitHub-Anmeldung:
 
 ```powershell
 $packageDirectory = Join-Path $env:LOCALAPPDATA 'BlitztextBuild/colleague-package'
 New-Item -ItemType Directory -Force $packageDirectory | Out-Null
-gh release download v0.1.0 --repo CozyBrozy/blitztext-local --pattern 'Blitztext-Lokal-Windows-x64.zip' --pattern 'Blitztext-Lokal-Windows-x64.zip.sha256' --dir $packageDirectory --clobber
-if ($LASTEXITCODE -ne 0) { throw 'Release-Download fehlgeschlagen.' }
 $zip = Join-Path $packageDirectory 'Blitztext-Lokal-Windows-x64.zip'
+$releaseBase = 'https://github.com/CozyBrozy/blitztext-local/releases/download/v0.1.1'
+Invoke-WebRequest -UseBasicParsing ($releaseBase + '/Blitztext-Lokal-Windows-x64.zip') -OutFile $zip
+Invoke-WebRequest -UseBasicParsing ($releaseBase + '/Blitztext-Lokal-Windows-x64.zip.sha256') -OutFile ($zip + '.sha256')
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -Raw).Trim() -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expected) { throw 'Release-Pruefsumme stimmt nicht.' }
 $expanded = Join-Path $packageDirectory 'expanded'

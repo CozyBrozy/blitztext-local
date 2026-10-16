@@ -15,6 +15,14 @@ New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $stage = Join-Path $OutputDirectory ('package-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $stage, (Join-Path $stage 'app'), (Join-Path $stage 'models') | Out-Null
 Copy-Item -Path (Join-Path $PublishDirectory '*') -Destination (Join-Path $stage 'app') -Recurse
+Get-ChildItem -LiteralPath (Join-Path $stage 'app') -Recurse -File -Filter '*.pdb' | ForEach-Object { Remove-Item -LiteralPath $_.FullName }
+foreach ($binary in @('Blitztext.Core.dll','Blitztext.Windows.dll')) {
+    $binaryText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path (Join-Path $stage 'app') $binary)))
+    if ($binaryText.IndexOf($env:USERNAME, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        $binaryText -match '(?i)[A-Z]:[\\/]+Users[\\/]+') {
+        throw ('Lokaler Benutzer-/Buildpfad in Release-Binaerdatei gefunden: ' + $binary)
+    }
+}
 foreach ($model in $models) { Copy-Item -LiteralPath (Join-Path $ModelDirectory $model.file) -Destination (Join-Path $stage 'models') }
 foreach ($file in @('setup.ps1','models.json','README.md','ANLEITUNG.md','THIRD_PARTY_NOTICES.md','LICENSE')) {
     Copy-Item -LiteralPath (Join-Path $root $file) -Destination $stage

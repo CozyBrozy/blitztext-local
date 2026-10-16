@@ -8,7 +8,7 @@ Dem Kollegen reicht dieser Auftrag:
 
 > Richte https://github.com/CozyBrozy/blitztext-local auf meinem Windows-PC ein. Lies ANLEITUNG.md und fuehre die Einrichtung samt Whisper-Modellen und Pruefungen selbst aus. Arbeite im Hintergrund ohne Bildschirmsteuerung. Keine Audioaufnahme zum Testen starten.
 
-Das Repository ist privat: Der Kollege braucht Zugriff mit seinem eigenen GitHub-Konto.
+Das Repository ist oeffentlich. Fuer Download und Einrichtung ist kein GitHub-Konto erforderlich.
 
 ## Installation
 
