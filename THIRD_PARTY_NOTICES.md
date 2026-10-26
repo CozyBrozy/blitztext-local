@@ -5,6 +5,7 @@ Diese eigenstaendige Windows-Anpassung basiert auf [echobrain-de/blitztext](http
 - Whisper-Code und Modellgewichte: OpenAI, MIT, `licenses/Whisper-MIT.txt`.
 - GGML-Modellkonvertierung / whisper.cpp: ggml-org und Mitwirkende, MIT, `licenses/whisper.cpp-MIT.txt`. Modelle kommen aus `ggerganov/whisper.cpp` auf Hugging Face; die erwarteten SHA256-Werte stehen in `models.json`.
 - Whisper.net: sandrohanea und Mitwirkende, MIT, `licenses/Whisper.net-MIT.txt`.
+- CUDA-Unterstuetzung: Whisper.net.Runtime.Cuda.Windows 1.9.1. Zusaetzliche NVIDIA CUDA Runtime-/cuBLAS-DLLs werden fuer die lokale GPU-Einrichtung aus offiziellen NVIDIA-Redistributables separat geladen, siehe GPU.md. Fuer diese proprietaeren Komponenten gelten die jeweiligen NVIDIA-Lizenztexte im Downloadarchiv; sie sind nicht durch die MIT-Lizenz dieses Repos abgedeckt. Dieses Quellcodeupdate veroeffentlicht kein neues GPU-Release-ZIP.
 - NAudio: Mark Heath und Mitwirkende, MIT, `licenses/NAudio-MIT.txt`.
 - Mitgelieferte .NET-Laufzeit: Die LICENSE- und ThirdPartyNotices-Dateien im veroeffentlichten App-Verzeichnis gelten zusaetzlich.
 

@@ -6,6 +6,19 @@ namespace Blitztext.Tests;
 public sealed class SettingsStoreTests
 {
     [Fact]
+    public async Task SaveAndLoad_PreservesExplicitLocalQualityModel()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"blitztext-quality-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SettingsStore(path);
+            await store.SaveAsync(new AppSettings { LocalWhisperModelFile = "ggml-large-v3.bin" });
+            Assert.Equal("ggml-large-v3.bin", (await store.LoadAsync()).LocalWhisperModelFile);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task LoadAsync_WhenFileMissing_ReturnsDefaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"blitztext-settings-{Guid.NewGuid():N}.json");

@@ -9,7 +9,7 @@
  <TextBlock Text="Diktieren auf diesem PC. Ohne API-Key und ohne Cloud." TextWrapping="Wrap" Margin="0,8,0,20"/>
  <Border Background="White" Padding="16" CornerRadius="8">
  <StackPanel>
- <TextBlock Text="Whisper Small, mehrsprachig" FontWeight="SemiBold"/>
+ <TextBlock Text="Whisper, lokal und mehrsprachig" FontWeight="SemiBold"/>
  <TextBlock x:Name="ModelStatusText" TextWrapping="Wrap" Margin="0,8,0,0"/>
  <TextBlock Text="Audio wird lokal verarbeitet. Temporäre Aufnahmen werden nach der Verarbeitung gelöscht. Text verbessern ist in dieser Version deaktiviert." TextWrapping="Wrap" Margin="0,10,0,0" Foreground="#526071"/>
  </StackPanel>

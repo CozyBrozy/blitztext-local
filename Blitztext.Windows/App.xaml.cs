@@ -10,12 +10,13 @@ public partial class App : System.Windows.Application
     private TrayController? trayController;
     private LocalWhisperTranscriber? transcriber;
     private LocalWhisperTranscriber? conversationTranscriber;
+    private static string selectedModelFile = "";
     public static string ConversationModelPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "BlitztextLocal", "models", "ggml-base.bin");
+        "BlitztextLocal", "models", string.IsNullOrEmpty(selectedModelFile) ? "ggml-base.bin" : selectedModelFile);
     public static string ModelPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "BlitztextLocal", "models", "ggml-small.bin");
+        "BlitztextLocal", "models", string.IsNullOrEmpty(selectedModelFile) ? "ggml-small.bin" : selectedModelFile);
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -38,9 +39,14 @@ public partial class App : System.Windows.Application
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "BlitztextLocal", "settings.json"));
             var settings = await store.LoadAsync();
+            selectedModelFile = settings.LocalWhisperModelFile?.Trim() ?? "";
+            if (selectedModelFile.Length > 0 && selectedModelFile is not
+                ("ggml-base.bin" or "ggml-small.bin" or "ggml-medium.bin" or "ggml-large-v3.bin" or "ggml-large-v3-turbo.bin"))
+                throw new InvalidOperationException("Unbekannte lokale Whisper-Modellauswahl.");
             transcriber = new LocalWhisperTranscriber(ModelPath);
             var runner = new WorkflowRunner(transcriber, () => settings);
-            conversationTranscriber = new LocalWhisperTranscriber(ConversationModelPath);
+            conversationTranscriber = string.Equals(ModelPath, ConversationModelPath, StringComparison.OrdinalIgnoreCase)
+                ? transcriber : new LocalWhisperTranscriber(ConversationModelPath);
             trayController = new TrayController(settings, store, runner, new ConversationProcessor(conversationTranscriber));
             trayController.Start(e.Args.Contains("--background"));
         }

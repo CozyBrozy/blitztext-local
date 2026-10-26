@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Blitztext.Core.Conversation;
 using Blitztext.Core.Settings;
+using Blitztext.Core.Transcription;
 using Blitztext.Windows.Platform;
 namespace Blitztext.Windows;
 
@@ -19,6 +20,7 @@ public partial class ConversationWindow : Window
     private CancellationTokenSource? stopPolling;
     private Task? liveTask;
     private bool busy;
+    private bool processingOnly;
     private DateTimeOffset started;
     private string? captureFailure;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -31,15 +33,16 @@ public partial class ConversationWindow : Window
         this.processor = processor;
         this.acquire = acquire;
         this.release = release;
-        timer.Tick += (_, _) => StatusText.Text =
-            $"Aufnahme läuft: {(DateTimeOffset.Now - started):hh\\:mm\\:ss}. Live-Text folgt abschnittsweise, Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s.";
+        timer.Tick += (_, _) => StatusText.Text = processingOnly
+            ? $"Aufnahme beendet. {LocalWhisperTranscriber.Backend} verarbeitet weiter. Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s. Bitte bis Fertig warten."
+            : $"Aufnahme läuft: {(DateTimeOffset.Now - started):hh\\:mm\\:ss}. {LocalWhisperTranscriber.Backend}. Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s.";
         Closing += (_, e) =>
         {
             if (!busy) return;
             e.Cancel = true;
             StatusText.Text = "Bitte erst stoppen und die letzten Abschnitte abwarten. Minimieren ist möglich.";
         };
-        DevicesText.Text = "Du = Mikrofon. Andere Teilnehmer = Computerton. Kopfhörer vermeiden doppelte Aufnahme.";
+        DevicesText.Text = "Du = Mikrofon. Andere Teilnehmer = Computerton. Modell: " + Path.GetFileName(App.ConversationModelPath) + ".";
     }
     private async void Record_Click(object sender, RoutedEventArgs e)
     {
@@ -50,9 +53,10 @@ public partial class ConversationWindow : Window
             if (recorder is null)
             {
                 if (busy) return;
-                if (!File.Exists(App.ConversationModelPath)) { StatusText.Text = "Das lokale Whisper-Base-Modell für Live-Gespräche fehlt."; return; }
+                if (!File.Exists(App.ConversationModelPath)) { StatusText.Text = "Lokales Modell fehlt: " + App.ConversationModelPath; return; }
                 if (!acquire()) { StatusText.Text = "Eine andere Aufnahme oder Verarbeitung läuft bereits."; return; }
                 busy = true;
+                processingOnly = false;
                 captureFailure = null;
                 TranscriptBox.Clear();
                 try
@@ -67,7 +71,7 @@ public partial class ConversationWindow : Window
                     transcript = new ConversationTranscriptFile(file, header);
                     await transcript.SaveAsync([]);
                     SavedText.Text = "Wird fortlaufend gespeichert: " + file;
-                    DevicesText.Text = "Du: " + recorder.MicrophoneName + ". Andere Teilnehmer: " + recorder.OutputName;
+                    DevicesText.Text = "Du: " + recorder.MicrophoneName + ". Andere Teilnehmer: " + recorder.OutputName + ". Modell: " + Path.GetFileName(App.ConversationModelPath);
                     worker = new LiveConversationWorker(recorder, processor, transcript, settings.Language);
                     worker.Updated += text => Dispatcher.InvokeAsync(() =>
                     {
@@ -95,7 +99,7 @@ public partial class ConversationWindow : Window
                         }
                     });
                     RecordButton.Content = "Gespräch stoppen";
-                    StatusText.Text = "Aufnahme läuft. Die ersten Textabschnitte erscheinen nach wenigen Sekunden.";
+                    StatusText.Text = "Aufnahme läuft. Lokale Verarbeitung im Hintergrund mit " + Path.GetFileName(App.ConversationModelPath) + ". Text erscheint nach Verarbeitung; bei großen Modellen kann dies länger dauern.";
                     timer.Start();
                 }
                 catch (Exception ex)
@@ -137,8 +141,10 @@ public partial class ConversationWindow : Window
     }
     private async Task StopAsync()
     {
-        timer.Stop();
+        processingOnly = true;
         var finished = recorder!;
+        var completed = false;
+        if (transcript is not null) transcript.CurrentStatus = "Verarbeitung läuft";
         stopPolling?.Cancel();
         try
         {
@@ -147,6 +153,7 @@ public partial class ConversationWindow : Window
             if (liveTask is not null) await liveTask;
             if (captureFailure is not null) throw new IOException(captureFailure);
             if (worker is not null) await Task.Run(() => worker.FinishAsync());
+            completed = true;
             StatusText.Text = "Fertig. Das vollständige Transkript ist lokal gespeichert.";
             SavedText.Text = "Lokal gespeichert: " + transcript?.Path;
         }
@@ -157,12 +164,14 @@ public partial class ConversationWindow : Window
             try { if (transcript is not null) await transcript.SaveAsync([], "Unterbrochen: " + ex.Message); }
             catch { }
             StatusText.Text = "Gespräch unterbrochen: " + ex.Message + ". Bereits gespeicherter Text bleibt erhalten.";
+            SavedText.Text = "Audio zur Wiederherstellung bleibt erhalten: " + finished.DirectoryPath;
         }
         finally
         {
             recorder = null;
+            timer.Stop();
             finished.Dispose();
-            Cleanup(finished.DirectoryPath);
+            if (completed) Cleanup(finished.DirectoryPath);
             stopPolling?.Dispose();
             stopPolling = null;
             liveTask = null;

@@ -20,7 +20,7 @@ public partial class SettingsWindow : Window
         ModeBox.SelectedIndex = settings.HotkeyMode == HotkeyMode.Hold ? 1 : 0;
         AutoPasteBox.IsChecked = settings.AutoPaste;
         ModelStatusText.Text = File.Exists(App.ModelPath)
-            ? "Installiert. Lokales Diktieren ist bereit."
+            ? "Lokales Modell: " + Path.GetFileName(App.ModelPath) + ". Diktieren ist bereit."
             : "Modell fehlt: " + App.ModelPath;
         ReloadMicrophones();
         OutputDeviceBox.ItemsSource = ConversationRecorder.Outputs();

@@ -1,108 +1,57 @@
-# Auftrag fuer Codex: Blitztext Lokal auf diesem Windows-PC einrichten
+# Auftrag fuer Codex: aktuelle lokale Blitztext-Version einrichten
 
-Fuehre die Einrichtung selbst aus. Liefere keine blosse Anleitung als Ersatz fuer die Installation. Arbeite ueber Dateien und Terminal im Hintergrund, ohne Bildschirmsteuerung, Screenshots oder Fernbedienung. Starte keine Mikrofon- oder Computertonaufnahme zum Testen.
+Installiere die App selbst. Arbeite mit Dateien und Terminal im Hintergrund. Keine Bildschirmsteuerung, Screenshots oder heimlichen Mikrofon-/Loopback-Tests. Keine API-Keys, Audio-Uploads oder Cloud-Verarbeitung.
 
-## Ziel
+## 1. Bestand und Hardware pruefen
 
-Die App soll auf dem PC des aktuellen Benutzers einsatzbereit sein, inklusive beider lokal installierter Whisper-Modelle und Startmenue-Verknuepfung. Es sind keine API-Keys, kein OpenAI-Konto und kein ChatGPT-Abo fuer die Transkription erforderlich.
+- Windows 11 x64, AVX2 und PowerShell 7 pruefen. Bei Bedarf PowerShell aus dem offiziellen Microsoft-Paket installieren; keine ExecutionPolicy oder Windows-Schutzfunktion umgehen.
+- Bestehende App und Datenordner erkennen. Eine laufende Aufnahme oder Verarbeitung nicht beenden. Vor einem Update den Benutzer fertig werden und die App ueber das Tray beenden lassen.
+- Bei einer festgefahrenen Verarbeitung zuerst beide vollstaendigen Audios und das bisherige Markdown ausserhalb des Repos sichern und die Audio-Pruefsummen vergleichen. Erst danach einen Ersatzlauf vorbereiten.
+- `nvidia-smi` pruefen. Bei passender NVIDIA-GPU CUDA nach GPU.md einrichten. Die CUDA-Versionsanzeige des Treibers beweist noch nicht, dass die benoetigten DLLs installiert sind.
 
-- Diktieren: Mikrofon, Strg+Umschalt+Leertaste startet und stoppt, Text ins aktive Feld.
-- Gespraech: Mikrofon und gewaehlte Audioausgabe gleichzeitig, mitlaufender Text mit Zeitstempeln. **Du** ist die Mikrofonquelle; **Andere Teilnehmer** ist die gemeinsame Computerquelle. Das ist keine individuelle Sprechererkennung.
-- Die Gespraechsdatei entsteht ab Start und wird laufend lokal aktualisiert. Beim Stoppen wird nur der offene Rest verarbeitet.
-
-## 1. Zugriff und Dateien
-
-Repository: `https://github.com/CozyBrozy/blitztext-local`
-
-Das Repository ist oeffentlich. Der Download benoetigt keine Anmeldung. Bei einem Netzwerk- oder Zugriffsfehler diesen konkret melden; keine fremden Zugangsdaten anfordern.
-
-Wenn der Quellcode noch nicht lokal liegt:
-
-```powershell
-gh repo clone CozyBrozy/blitztext-local
-Set-Location blitztext-local
-```
-
-Falls `gh` nicht installiert ist, mit vorhandenem Git und bereits eingerichteter eigener Anmeldung klonen:
+## 2. Aktuellen Quellcode beziehen
 
 ```powershell
 git clone https://github.com/CozyBrozy/blitztext-local.git
 Set-Location blitztext-local
 ```
 
-## 2. Bevorzugt: fertiges Release mit beiden Modellen
+Bei vorhandenem Klon zuerst lokale Aenderungen pruefen. Kein Reset und keine persoenlichen Daten ueberschreiben. Das Repo ist oeffentlich; keine fremden GitHub-Zugangsdaten anfordern.
 
-Pruefe zuerst `Get-Command pwsh`. Nutze PowerShell 7. Falls nicht vorhanden, kann es ueber den offiziellen Microsoft-Eintrag installiert werden:
+**Release v0.1.1 ist die aeltere CPU-Version.** CUDA und Wiederherstellung liegen im aktuellen Quellcode. Fuer den neuen Stand aus dem Quellcode installieren.
 
-```powershell
-winget install --id Microsoft.PowerShell --exact --source winget --silent --accept-package-agreements --accept-source-agreements
-```
-
-Danach `pwsh.exe` ueber den tatsaechlichen Installationspfad oder eine neue Shell verwenden. Eine verlangte Windows-Adminfreigabe muss der Benutzer selbst erledigen. Keine ExecutionPolicy aendern und keine Sperre umgehen. Bei einer verbindlichen Unternehmensrichtlinie, die auch PowerShell 7 sperrt, den konkreten Blocker melden.
-
-Das Release `v0.1.1` enthaelt `Blitztext-Lokal-Windows-x64.zip` mit fertiger App, .NET-Laufzeit, Whisper Small und Whisper Base. Modelle liegen absichtlich im Release-Asset statt in der Git-Historie. Keine persoenlichen Einstellungen oder Gespraeche sind enthalten.
-
-Lade und pruefe das oeffentliche Paket ohne GitHub-Anmeldung:
+## 3. App installieren
 
 ```powershell
-$packageDirectory = Join-Path $env:LOCALAPPDATA 'BlitztextBuild/colleague-package'
-New-Item -ItemType Directory -Force $packageDirectory | Out-Null
-$zip = Join-Path $packageDirectory 'Blitztext-Lokal-Windows-x64.zip'
-$releaseBase = 'https://github.com/CozyBrozy/blitztext-local/releases/download/v0.1.1'
-Invoke-WebRequest -UseBasicParsing ($releaseBase + '/Blitztext-Lokal-Windows-x64.zip') -OutFile $zip
-Invoke-WebRequest -UseBasicParsing ($releaseBase + '/Blitztext-Lokal-Windows-x64.zip.sha256') -OutFile ($zip + '.sha256')
-$expected = ((Get-Content -LiteralPath ($zip + '.sha256') -Raw).Trim() -split '\s+')[0]
-if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expected) { throw 'Release-Pruefsumme stimmt nicht.' }
-$expanded = Join-Path $packageDirectory 'expanded'
-Expand-Archive -LiteralPath $zip -DestinationPath $expanded -Force
-pwsh -NoProfile -File (Join-Path $expanded 'setup.ps1') -InstallPrerequisites
-if ($LASTEXITCODE -ne 0) { throw 'Einrichtung fehlgeschlagen. Konkreten Fehler pruefen.' }
+pwsh -NoProfile -File .\setup.ps1 -FromSource -InstallPrerequisites -NoStart
+if ($LASTEXITCODE -ne 0) { throw 'Einrichtung fehlgeschlagen.' }
 ```
 
-App und Modelle werden aus dem ZIP installiert. Nur wenn Visual C++ x64 fehlt, wird der signierte Microsoft-Installer heruntergeladen; eine Windows-Adminfreigabe kann erforderlich sein. Diese muss der Benutzer selbst bestaetigen. Ist ein Paket bereits manuell entpackt, dessen `setup.ps1` direkt verwenden.
+Setup prueft Microsoft-Signaturen bzw. offizielle SDK-/Modell-Pruefsummen, installiert bei Bedarf das .NET-8-SDK im Benutzerprofil, stellt NuGet-Pakete wieder her, testet und publiziert die App. Small und Base werden fuer den kompatiblen Grundbetrieb geladen. Der Startmenue-Link wird erstellt. Eine verlangte Adminfreigabe fuer Visual C++ erledigt der Benutzer selbst. Setup beendet keine laufende App.
 
-## 3. Alternative: vollstaendig aus diesem Quellcode
+## 4. Hohe Qualitaet mit NVIDIA
 
-Wenn kein Release-Download moeglich ist, aber der Quellcode vorliegt, funktioniert die Einrichtung ohne GitHub-CLI:
+Bei geeigneter NVIDIA-GPU **GPU.md lesen und den dortigen Ablauf ausfuehren**. Er installiert die benoetigten NVIDIA-DLLs lokal, laedt und prueft full large-v3, testet CUDA mit synthetischer Sprache ohne Mikrofon und setzt erst nach erfolgreichem Test `LocalWhisperModelFile` auf `ggml-large-v3.bin`.
 
-```powershell
-pwsh -NoProfile -File .\setup.ps1 -FromSource -InstallPrerequisites
-if ($LASTEXITCODE -ne 0) { throw 'Einrichtung fehlgeschlagen. Konkreten Fehler pruefen.' }
-```
+Nicht pauschal ein grosses CPU-Modell aktivieren. Falls GPU-Speicher oder Treiber nicht passen, den konkreten Messbefund melden. Keine stundenlange CPU-Verarbeitung als erfolgreiches GPU-Setup ausgeben. Kein stilles Downgrade auf ein kleineres Modell, wenn hohe Qualitaet verlangt ist.
 
-`setup.ps1` installiert bei Bedarf das .NET-8-SDK nur im Benutzerprofil, prueft dessen offizielles SHA512, laedt beide Whisper-Modelle von Hugging Face und prueft deren SHA256 gegen `models.json`. Danach folgen NuGet-Restore, Tests, Release-Build, Installation und Startmenue-Verknuepfung. Die App wird ohne Fenster im Hintergrund gestartet. Bestehende Modelle werden geprueft und wiederverwendet. Ein anderer bereits laufender Installationsstand wird nicht gewaltsam beendet.
-
-## 4. Nachweis
-
-Im Repo oder entpackten Paket ausfuehren:
+Ohne GPU-Einrichtung bleiben die Small-/Base-Standards erhalten. Dann nach dem Dateitest im Hintergrund starten:
 
 ```powershell
 pwsh -NoProfile -File .\setup.ps1 -VerifyOnly
 if ($LASTEXITCODE -ne 0) { throw 'Installationspruefung fehlgeschlagen.' }
-Get-Process Blitztext.Windows -ErrorAction SilentlyContinue | Select-Object Id, Responding
+Start-Process -FilePath (Join-Path $env:LOCALAPPDATA 'Programs/BlitztextLocal/Blitztext.Windows.exe') -ArgumentList '--background' -WindowStyle Hidden
 ```
 
-Pruefe, dass die App existiert und beide Modellhashes stimmen. Ein erfolgreicher Dateitest ist noch kein Nachweis einer funktionierenden echten Audioaufnahme. Keine Aufnahme heimlich starten. Erst der Benutzer probiert danach Diktieren und einen Call aus.
+## 5. Erfolg belegen
 
-Voraussetzungen: Windows 11 x64, CPU mit AVX2-Unterstuetzung, Mikrofon. Kein ARM64-Paket. Die Installation selbst benoetigt Internet, sofern nicht App und Modelle bereits im ZIP vorliegen. Die Transkription benoetigt danach kein Internet.
+- Installierte App, Modelle und Pruefsummen pruefen. `setup.ps1 -VerifyOnly` prueft Small/Base und den Grundbetrieb; zusaetzliche GPU-/large-v3-Nachweise stehen in GPU.md.
+- Fuer den GPU-Weg tatsaechlich `Runtime: Cuda` und NVIDIA-Geraet im synthetischen Test nachweisen. Ein vorhandener Treiber allein reicht nicht.
+- Keine echte Aufnahme starten. Mikrofon-/Meetingtest macht der Benutzer selbst. Im Gespraech soll das Fenster `NVIDIA GPU (CUDA)` und den Rueckstand zeigen.
+- Datenordner, verwendetes Modell, Backend und Grenzen knapp nennen. Taskleiste nicht automatisch manipulieren; Startmenue-Eintrag verwenden.
 
-## 5. Keine unnoetigen Aenderungen
+## Bedienung und Datenschutz
 
-- Keine API-Keys eintragen und keinen Cloud-Fallback hinzufuegen.
-- Keine Windows-Schutzfunktionen, Mikrofonrechte oder ExecutionPolicy aendern; keine SmartScreen-Sperre umgehen. Falls eine tatsaechliche Sperre auftritt, den Benutzer die konkrete Freigabe selbst erledigen lassen.
-- Keine App-Prozesse automatisch beenden und keine laufende Aufnahme unterbrechen. Bei einem Update den Benutzer zuerst seine Aufnahme und die App beenden lassen.
-- Keine persoenlichen Dateien, Transkripte oder Einstellungen aus diesem Repo erwarten oder uebertragen. Bestehende lokale Daten erhalten.
-- Nicht automatisch an der Taskleiste manipulieren. Startmenue-Verknuepfung erstellen; Anheften kann der Benutzer manuell vornehmen.
+Strg+Umschalt+Leertaste startet/stoppt Diktate. Fuer Gespraeche Mikrofon und das tatsaechlich vom Call verwendete Ausgabegeraet waehlen. **Du** ist Mikrofon, **Andere Teilnehmer** ist Computerton; keine individuelle Sprechererkennung. Das Transkript erscheint abschnittsweise mit Zeitstempeln und wird laufend gespeichert. Nach Stoppen auf die Verarbeitung bis Fertig warten.
 
-## 6. Abschluss fuer den Benutzer
-
-Sage knapp, wo **Blitztext Lokal** gestartet wird und wie das Diktierkuerzel funktioniert. Fuer Gespraeche: App oeffnen, Mikrofon und das tatsaechlich von Teams verwendete Ausgabegeraet waehlen, **Gespraechsmodus oeffnen**, **Gespraech starten**. Text erscheint abschnittsweise mit Verzoegerung und wird fortlaufend gespeichert. Kopfhörer vermeiden doppelt aufgenommenen Computerton. Mehrere Computerstimmen bleiben unter **Andere Teilnehmer** zusammengefasst.
-
-Installationsorte:
-
-- App: `%LOCALAPPDATA%/Programs/BlitztextLocal/Blitztext.Windows.exe`
-- Modelle: `%LOCALAPPDATA%/BlitztextLocal/models`
-- Gespraeche: `%LOCALAPPDATA%/BlitztextLocal/conversations`, auch ueber **Ablage oeffnen** erreichbar.
-- Normale Diktate werden nicht als Gespraechsdatei abgelegt.
-
-Berichte durchgefuehrte Pruefungen und tatsaechliche Blocker. Behaupte keinen Mikrofon- oder Call-Test, wenn nur Dateien und Prozessstart geprueft wurden.
+Keine persoenlichen Einstellungen, Aufnahmen, Transkripte, Recovery-JSONs, Tokens oder Modelle committen. Bestehende Gespraeche erhalten. Die CLI-Wiederherstellung schreibt in eine neue Datei und behaelt die gesicherten Eingangsaudios.

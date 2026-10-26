@@ -4,6 +4,7 @@ namespace Blitztext.Core.Settings;
 
 public sealed class AppSettings
 {
+    public string LocalWhisperModelFile { get; set; } = "";
     public string ConversationOutputDeviceId { get; set; } = "";
     public string Language { get; set; } = "de";
     public HotkeyMode HotkeyMode { get; set; } = HotkeyMode.Toggle;
