@@ -27,3 +27,4 @@ INSTALLATION.json
 *.recovery.json
 *.before-cuda-*
 recovery/
+*.before-turns-*.bak

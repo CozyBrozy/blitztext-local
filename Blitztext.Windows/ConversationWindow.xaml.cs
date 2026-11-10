@@ -23,6 +23,7 @@ public partial class ConversationWindow : Window
     private bool processingOnly;
     private DateTimeOffset started;
     private string? captureFailure;
+    private string? savedTranscriptPath;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     public static string OutputFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlitztextLocal", "conversations");
@@ -34,15 +35,18 @@ public partial class ConversationWindow : Window
         this.acquire = acquire;
         this.release = release;
         timer.Tick += (_, _) => StatusText.Text = processingOnly
-            ? $"Aufnahme beendet. {LocalWhisperTranscriber.Backend} verarbeitet weiter. Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s. Bitte bis Fertig warten."
-            : $"Aufnahme läuft: {(DateTimeOffset.Now - started):hh\\:mm\\:ss}. {LocalWhisperTranscriber.Backend}. Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s.";
+            ? $"Aufnahme beendet. Transkript wird fertiggestellt. Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s. Bitte bis Fertig warten."
+            : $"Aufnahme läuft: {(DateTimeOffset.Now - started):hh\\:mm\\:ss}. Rückstand ca. {worker?.Backlog.TotalSeconds ?? 0:0} s.";
         Closing += (_, e) =>
         {
             if (!busy) return;
             e.Cancel = true;
             StatusText.Text = "Bitte erst stoppen und die letzten Abschnitte abwarten. Minimieren ist möglich.";
         };
-        DevicesText.Text = "Du = Mikrofon. Andere Teilnehmer = Computerton. Modell: " + Path.GetFileName(App.ConversationModelPath) + ".";
+        var mic = AudioRecorder.AvailableDevices().FirstOrDefault(d => d.Index == settings.AudioInputDeviceNumber)?.Name;
+        var output = ConversationRecorder.Outputs().FirstOrDefault(d => d.Id == settings.ConversationOutputDeviceId)?.Name;
+        SetDevices(mic ?? "Nicht verfügbar", output ?? "Nicht verfügbar");
+        if (App.CudaStartupError is { } cudaError) StatusText.Text = cudaError;
     }
     private async void Record_Click(object sender, RoutedEventArgs e)
     {
@@ -53,12 +57,25 @@ public partial class ConversationWindow : Window
             if (recorder is null)
             {
                 if (busy) return;
-                if (!File.Exists(App.ConversationModelPath)) { StatusText.Text = "Lokales Modell fehlt: " + App.ConversationModelPath; return; }
+                if (App.CudaStartupError is { } cudaError)
+                {
+                    StatusText.Text = cudaError;
+                    return;
+                }
+                try { LocalWhisperModels.ValidateModel(App.ConversationModelPath); }
+                catch (Exception ex)
+                {
+                    AppLog.Write("Conversation model preflight failed: " + ex);
+                    StatusText.Text = ex.Message;
+                    return;
+                }
                 if (!acquire()) { StatusText.Text = "Eine andere Aufnahme oder Verarbeitung läuft bereits."; return; }
                 busy = true;
                 processingOnly = false;
                 captureFailure = null;
                 TranscriptBox.Clear();
+                SavedText.Text = "";
+                SetTranscriptLink(null);
                 try
                 {
                     recorder = new ConversationRecorder();
@@ -70,9 +87,10 @@ public partial class ConversationWindow : Window
                     var header = $"# Gespräch {started:dd.MM.yyyy HH:mm:ss zzz}\n\nDu: Mikrofon ({recorder.MicrophoneName})\nAndere Teilnehmer: Computerton ({recorder.OutputName})\nZeitstempel ab Aufnahmebeginn, näherungsweise. Keine individuelle Sprechererkennung.\n";
                     transcript = new ConversationTranscriptFile(file, header);
                     await transcript.SaveAsync([]);
-                    SavedText.Text = "Wird fortlaufend gespeichert: " + file;
-                    DevicesText.Text = "Du: " + recorder.MicrophoneName + ". Andere Teilnehmer: " + recorder.OutputName + ". Modell: " + Path.GetFileName(App.ConversationModelPath);
-                    worker = new LiveConversationWorker(recorder, processor, transcript, settings.Language);
+                    SetDevices(recorder.MicrophoneName, recorder.OutputName);
+                    var detector = Path.Combine(AppContext.BaseDirectory, "ggml-silero-v5.1.2.bin");
+                    worker = new LiveConversationWorker(recorder, processor, transcript, settings.Language,
+                        File.Exists(detector) ? detector : null);
                     worker.Updated += text => Dispatcher.InvokeAsync(() =>
                     {
                         TranscriptBox.Text = text;
@@ -99,7 +117,7 @@ public partial class ConversationWindow : Window
                         }
                     });
                     RecordButton.Content = "Gespräch stoppen";
-                    StatusText.Text = "Aufnahme läuft. Lokale Verarbeitung im Hintergrund mit " + Path.GetFileName(App.ConversationModelPath) + ". Text erscheint nach Verarbeitung; bei großen Modellen kann dies länger dauern.";
+                    StatusText.Text = "Aufnahme läuft";
                     timer.Start();
                 }
                 catch (Exception ex)
@@ -154,8 +172,8 @@ public partial class ConversationWindow : Window
             if (captureFailure is not null) throw new IOException(captureFailure);
             if (worker is not null) await Task.Run(() => worker.FinishAsync());
             completed = true;
-            StatusText.Text = "Fertig. Das vollständige Transkript ist lokal gespeichert.";
-            SavedText.Text = "Lokal gespeichert: " + transcript?.Path;
+            StatusText.Text = "Fertig. Transkript gespeichert.";
+            SetTranscriptLink(transcript?.Path);
         }
         catch (Exception ex)
         {
@@ -193,6 +211,37 @@ public partial class ConversationWindow : Window
     {
         if (!string.IsNullOrWhiteSpace(TranscriptBox.Text)) System.Windows.Clipboard.SetText(TranscriptBox.Text);
     }
+    private void SetDevices(string microphone, string output) =>
+        DevicesText.Text = $"Mikrofon: {microphone}{Environment.NewLine}Computerton: {output}";
+
+    private void SetTranscriptLink(string? path)
+    {
+        savedTranscriptPath = path;
+        TranscriptName.Text = path is null ? "" : Path.GetFileName(path);
+        TranscriptLinks.ToolTip = path;
+        TranscriptLinks.Visibility = path is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OpenTranscript_Click(object sender, RoutedEventArgs e) => OpenSavedTranscript(reveal: false);
+    private void RevealTranscript_Click(object sender, RoutedEventArgs e) => OpenSavedTranscript(reveal: true);
+
+    private void OpenSavedTranscript(bool reveal)
+    {
+        if (savedTranscriptPath is not { } path || !File.Exists(path))
+        {
+            StatusText.Text = "Die Transkriptdatei ist nicht mehr vorhanden.";
+            return;
+        }
+
+        try
+        {
+            Process.Start(reveal
+                ? new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true }
+                : new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { StatusText.Text = "Transkript konnte nicht geöffnet werden: " + ex.Message; }
+    }
+
     private void Folder_Click(object sender, RoutedEventArgs e)
     {
         Directory.CreateDirectory(OutputFolder);

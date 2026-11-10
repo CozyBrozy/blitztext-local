@@ -20,6 +20,11 @@ $buildDirectory = Join-Path $env:LOCALAPPDATA 'BlitztextBuild'
 $models = Get-Content -LiteralPath (Join-Path $packageRoot 'models.json') -Raw | ConvertFrom-Json
 $InstallDirectory = [IO.Path]::GetFullPath($InstallDirectory)
 $appPath = Join-Path $InstallDirectory 'Blitztext.Windows.exe'
+$speechDetector = @{
+    File = 'ggml-silero-v5.1.2.bin'
+    Url = 'https://huggingface.co/ggml-org/whisper-vad/resolve/e5614ed76a5dd4b03fad5068c89efcd2617a9d1e/ggml-silero-v5.1.2.bin'
+    Hash = '29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf'
+}
 
 function Assert-Hash([string]$Path, [string]$Expected, [string]$Algorithm = 'SHA256') {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Datei fehlt: $Path" }
@@ -83,7 +88,8 @@ if ($VerifyOnly) {
     Assert-NativeRuntime
     if (-not (Test-Path -LiteralPath $appPath)) { throw "Installierte App fehlt: $appPath" }
     foreach ($model in $models) { Assert-Hash (Join-Path $modelDirectory $model.file) $model.sha256 }
-    Write-Output 'OK: App, beide Modell-Pruefsummen und native Laufzeit vorhanden. Mikrofon-/Call-Test separat durchfuehren.'
+    Assert-Hash (Join-Path $InstallDirectory $speechDetector.File) $speechDetector.Hash
+    Write-Output 'OK: App, Basismodelle, Sprachfilter und native Laufzeit geprueft. CUDA separat nach GPU.md testen.'
     return
 }
 $running = Get-Process -Name Blitztext.Windows -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $appPath }
@@ -120,12 +126,27 @@ if ($FromSource -or -not (Test-Path -LiteralPath (Join-Path $publish 'Blitztext.
     } finally { Pop-Location }
 }
 if (-not (Test-Path -LiteralPath (Join-Path $publish 'Blitztext.Windows.exe'))) { throw 'Keine installierbare App vorhanden.' }
+$detectorCache = Join-Path $buildDirectory $speechDetector.File
+$installedDetector = Join-Path $InstallDirectory $speechDetector.File
+if (Test-Path -LiteralPath $installedDetector -PathType Leaf) {
+    Assert-Hash $installedDetector $speechDetector.Hash
+} else {
+    if (-not (Test-Path -LiteralPath $detectorCache -PathType Leaf)) {
+        Receive-Verified $speechDetector.Url $detectorCache $speechDetector.Hash
+    }
+    Assert-Hash $detectorCache $speechDetector.Hash
+}
 New-Item -ItemType Directory -Force $InstallDirectory | Out-Null
 Copy-Item -Path (Join-Path $publish '*') -Destination $InstallDirectory -Recurse -Force
+if (-not (Test-Path -LiteralPath $installedDetector -PathType Leaf)) {
+    Copy-Item -LiteralPath $detectorCache -Destination $installedDetector
+}
+Assert-Hash $installedDetector $speechDetector.Hash
 if (-not $NoShortcuts) {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs/Blitztext Lokal.lnk'))
     $link.TargetPath = $appPath
+    $link.IconLocation = $appPath + ',0'
     $link.WorkingDirectory = $InstallDirectory
     $link.Description = 'Lokal diktieren und Live-Gespraeche transkribieren, ohne API-Key.'
     $link.Save()

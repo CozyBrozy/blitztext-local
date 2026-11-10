@@ -22,6 +22,7 @@ public sealed class TrayController : IDisposable
     public bool IsBusy => conversationBusy || isProcessing || activeWorkflow is not null;
     private readonly WorkflowRunner workflowRunner;
     private readonly Forms.NotifyIcon notifyIcon;
+    private readonly Icon applicationIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? (Icon)SystemIcons.Application.Clone();
     private readonly HotkeyManager hotkeyManager = new();
     private readonly AudioRecorder audioRecorder = new();
     private readonly ClipboardPasteService clipboardPasteService = new();
@@ -44,7 +45,7 @@ public sealed class TrayController : IDisposable
 
         notifyIcon = new Forms.NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = applicationIcon,
             Text = "Blitztext Lokal",
             Visible = false,
             ContextMenuStrip = BuildMenu()
@@ -59,7 +60,15 @@ public sealed class TrayController : IDisposable
         AppLog.Write("TrayController.Start");
         notifyIcon.Visible = true;
         RegisterHotkeys();
-        SetStatus("Blitztext bereit");
+        if (App.CudaStartupError is { } cudaError)
+        {
+            SetStatus("Blitztext: CUDA nicht verfügbar");
+            notifyIcon.ShowBalloonTip(5000, "NVIDIA CUDA", cudaError, Forms.ToolTipIcon.Warning);
+        }
+        else
+        {
+            SetStatus("Blitztext bereit");
+        }
         if (!background)
         {
             ShowFloatingToolbar();
@@ -145,10 +154,17 @@ public sealed class TrayController : IDisposable
     private void StartRecording(WorkflowType type)
     {
         if (isProcessing || conversationBusy || type != WorkflowType.Transcription) return;
-        if (!File.Exists(App.ModelPath))
+        if (App.CudaStartupError is { } cudaError)
         {
+            notifyIcon.ShowBalloonTip(5000, "NVIDIA CUDA", cudaError, Forms.ToolTipIcon.Warning);
+            return;
+        }
+        try { Blitztext.Core.Transcription.LocalWhisperModels.ValidateModel(App.ModelPath); }
+        catch (Exception ex)
+        {
+            AppLog.Write("Dictation model preflight failed: " + ex);
             ShowSettings();
-            notifyIcon.ShowBalloonTip(4000, "Modell fehlt", "Das lokale Whisper-Modell fehlt.", Forms.ToolTipIcon.Warning);
+            notifyIcon.ShowBalloonTip(4000, "Lokales Modell", ex.Message, Forms.ToolTipIcon.Warning);
             return;
         }
         try
@@ -328,5 +344,6 @@ public sealed class TrayController : IDisposable
         settingsWindow?.Close();
         notifyIcon.Visible = false;
         notifyIcon.Dispose();
+        applicationIcon.Dispose();
     }
 }

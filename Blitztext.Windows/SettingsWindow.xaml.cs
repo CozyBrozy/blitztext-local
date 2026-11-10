@@ -1,4 +1,3 @@
-using System.IO;
 using System.Windows;
 using Blitztext.Core.Models;
 using Blitztext.Core.Settings;
@@ -19,13 +18,22 @@ public partial class SettingsWindow : Window
         HotkeyBox.Text = settings.WorkflowHotkeys[WorkflowType.Transcription];
         ModeBox.SelectedIndex = settings.HotkeyMode == HotkeyMode.Hold ? 1 : 0;
         AutoPasteBox.IsChecked = settings.AutoPaste;
-        ModelStatusText.Text = File.Exists(App.ModelPath)
-            ? "Lokales Modell: " + Path.GetFileName(App.ModelPath) + ". Diktieren ist bereit."
-            : "Modell fehlt: " + App.ModelPath;
+        try
+        {
+            Blitztext.Core.Transcription.LocalWhisperModels.ValidateModel(App.ModelPath);
+            if (App.CudaStartupError is { } cudaError) ShowModelError(cudaError);
+        }
+        catch (Exception ex) { ShowModelError(ex.Message); }
         ReloadMicrophones();
         OutputDeviceBox.ItemsSource = ConversationRecorder.Outputs();
         OutputDeviceBox.SelectedValue = settings.ConversationOutputDeviceId;
     }
+    private void ShowModelError(string message)
+    {
+        ModelStatusText.Text = message;
+        ModelStatusText.Visibility = Visibility.Visible;
+    }
+
     private async void Conversation_Click(object sender, RoutedEventArgs e)
     {
         settings.ConversationOutputDeviceId = OutputDeviceBox.SelectedValue as string ?? "";

@@ -2,6 +2,7 @@ using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using System.IO;
 using Blitztext.Core.Conversation;
+using Whisper.net;
 namespace Blitztext.Windows.Platform;
 public static class ConversationAudio
 {
@@ -42,6 +43,12 @@ public static class ConversationAudio
             position = end;
         }
         if (start is not null) ranges.Add((start.Value, Math.Min(position, lastSignal + 0.25)));
+        return WriteRanges(reader, normalizedPath, source, ranges);
+    }
+
+    private static IReadOnlyList<ConversationTrack> WriteRanges(WaveFileReader reader, string normalizedPath,
+        string source, IReadOnlyList<(double Start, double End)> ranges)
+    {
         var result = new List<ConversationTrack>();
         foreach (var range in ranges)
         {
@@ -63,11 +70,32 @@ public static class ConversationAudio
         return result;
     }
     public static (IReadOnlyList<ConversationTrack> Tracks, TimeSpan Consumed) PrepareLiveTracks(
-        string normalizedPath, string source, TimeSpan offset, bool final)
+        string normalizedPath, string source, TimeSpan offset, bool final, string? speechDetectorPath = null)
     {
         using var reader = new WaveFileReader(normalizedPath);
         var duration = reader.TotalTime;
-        var chunks = SplitOnPauses(normalizedPath, source, 8);
+        IReadOnlyList<ConversationTrack> chunks;
+        if (speechDetectorPath is null)
+        {
+            chunks = SplitOnPauses(normalizedPath, source, 8);
+        }
+        else
+        {
+            using var factory = WhisperVadFactory.FromPath(speechDetectorPath);
+            using var detector = factory.CreateBuilder()
+                .WithUseGpu(false)
+                .WithThreads(1)
+                .WithMinSpeechDuration(TimeSpan.FromMilliseconds(160))
+                .WithMinSilenceDuration(TimeSpan.FromMilliseconds(350))
+                .WithSpeechPadding(TimeSpan.FromMilliseconds(120))
+                .WithMaxSpeechDuration(TimeSpan.FromSeconds(8))
+                .Build();
+            using var audio = File.OpenRead(normalizedPath);
+            var ranges = detector.DetectSpeech(audio)
+                .Select(range => (Math.Max(0, range.Start.TotalSeconds), Math.Min(duration.TotalSeconds, range.End.TotalSeconds)))
+                .ToArray();
+            chunks = WriteRanges(reader, normalizedPath, source, ranges);
+        }
         var ready = chunks.Where(c => final || c.Offset + c.Duration <= duration - TimeSpan.FromSeconds(0.4)).ToArray();
         TimeSpan consumed = final ? duration : ready.Length > 0 ? ready.Max(c => c.Offset + c.Duration)
             : chunks.Count > 0 ? chunks.Min(c => c.Offset) : TimeSpan.FromSeconds(Math.Max(0, duration.TotalSeconds - 0.25));

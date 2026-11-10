@@ -12,7 +12,7 @@ Das Repository ist oeffentlich. Fuer Download und Einrichtung ist kein GitHub-Ko
 
 ## Installation
 
-- **Aktueller GPU-Stand vom 26.10.2026:** Aus dem Quellcode mit `pwsh -NoProfile -File .\setup.ps1 -FromSource -InstallPrerequisites -NoStart` installieren. Danach [GPU.md](GPU.md) fuer NVIDIA/CUDA und large-v3 ausfuehren.
+- **Aktueller Stand:** Aus dem Quellcode nach [ANLEITUNG.md](ANLEITUNG.md) installieren. Fuer Full Whisper large-v3 mit NVIDIA CUDA anschliessend [GPU.md](GPU.md) ausfuehren.
 - **Aelteres Paket:** [Release v0.1.1](https://github.com/CozyBrozy/blitztext-local/releases/tag/v0.1.1) enthaelt die fruehere CPU-Version mit Small/Base, ohne die neue GPU-Unterstuetzung und Wiederherstellung.
 - **Einrichtung durch Codex:** Vollstaendige Befehle, Erfolgskriterien und Fehlerbehandlung in ANLEITUNG.md.
 
@@ -26,13 +26,21 @@ Windows 11 x64 mit AVX2, Mikrofon; Visual C++ x64 Runtime wird benoetigt. Bei de
 
 Teams kann ein anderes Ausgabegeraet als Windows verwenden. Das ausgewaehlte Geraet muss die Stimmen wirklich wiedergeben. Kopfhörer verhindern moeglichst, dass der Computerton auch im Mikrofon landet.
 
+**Darstellung nach Sprecherwechsel:** Aufeinanderfolgende Abschnitte derselben Quelle werden zu einem Sprecherblock zusammengefasst. Zeit und Name erscheinen nur am Blockanfang; der Zeitbereich reicht vom ersten Beginn bis zum spaetesten Ende. Eine Unterbrechung durch die andere Quelle beginnt einen neuen Block. Das gilt fuer Live-Anzeige, Kopieren, gespeichertes Markdown und CLI-Wiederherstellung. Die Originalsegmente bleiben intern fuer korrekte zeitliche Einsortierung erhalten.
+
+Bestehende Dateien lassen sich mit Original-Sicherung nachtraeglich zusammenfassen:
+
+```powershell
+.\scripts\Merge-TranscriptTurns.ps1 -Path 'C:\Pfad\zum\Gespraech.md'
+```
+
 ## Daten und Modellwahl
 
 Gespraeche und Modelle liegen unter %LOCALAPPDATA%/BlitztextLocal, die App unter %LOCALAPPDATA%/Programs/BlitztextLocal. Keine Audio-Uploads und kein Cloud-Fallback. Erfolgreich verarbeitete Gespraechsaudios werden bestmoeglich geloescht. Bei Verarbeitungsfehlern bleiben Audio und gespeicherter Text zur Wiederherstellung erhalten; ein erzwungener Prozessabbruch kann temporaere Dateien hinterlassen. Vor einem Eingriff beide Audios und das bisherige Transkript separat sichern. [GPU.md](GPU.md) beschreibt die fortsetzbare Wiederherstellung.
 
 Ohne explizite Auswahl: Small fuer Diktate und Base fuer Gespraeche. Fuer hohe Qualitaet mit passender NVIDIA-GPU: full large-v3 fuer beide Funktionen, CUDA und FlashAttention. Nur eine gemeinsame serialisierte Modellinstanz wird geladen. Full large-v3 auf CPU ist fuer laengere Gespraeche sehr langsam und wird nicht automatisch ausgewaehlt. Ein explizit ausgewaehltes fehlendes Modell wird nicht still ersetzt.
 
-Verarbeitung erfolgt abschnittsweise bei Pausen oder nach ca. acht Sekunden Dauersprache plus Rechenzeit. Das Fenster zeigt Backend und Rueckstand, auch nach dem Stoppen. **Stoppen beendet die Aufnahme; offene Verarbeitung laeuft bis Fertig weiter.**
+Silero erkennt Sprache auf beiden Tonspuren, bevor Whisper die Abschnitte transkribiert. Das Fenster zeigt den Verarbeitungsrueckstand auch nach dem Stoppen. Sobald die Verarbeitung fertig ist, laesst sich die Datei direkt oeffnen oder im Explorer markieren.
 
 Beispielmessung: RTX 500 Ada Laptop 4 GB, full large-v3 mit ca. 3571 MiB GPU-Belegung. Ein ca. 27-minuetiger Zweikanallauf wurde in ca. 4:45 Minuten verarbeitet. Synthetischer Satz: ca. 8,6 statt 38,5 Sekunden auf CPU, einschliesslich Modellladen. Das sind Werte eines Rechners, keine allgemeine Echtzeit- oder Qualitaetsgarantie.
 
@@ -42,4 +50,4 @@ Persoenliche Einstellungen, Audios, Transkripte und Wiederaufnahmestaende gehoer
 
 Eigenstaendige Anpassung von [echobrain-de/blitztext](https://github.com/echobrain-de/blitztext), inspiriert von [Christoph Magnussen / Blackboat](https://github.com/cmagnussen/blitztext-app). Keine offizielle Blackboat-Windows-Version. MIT-Lizenz und Herkunftshinweise bleiben erhalten: [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-31 automatisierte Tests sowie synthetische lokale CPU-/CUDA-Tests bestanden. Wiederaufnahme eines abgeschlossenen Verarbeitungslaufs war ohne Dopplungen und mit identischem Ausgabehash erfolgreich. Reale Mikrofon- und Meetingtests muss der jeweilige Benutzer mit seinen Geraeten durchfuehren.
+35 automatisierte Tests sowie synthetische lokale CPU-/CUDA-Tests bestanden. Wiederaufnahme eines abgeschlossenen Verarbeitungslaufs war ohne Dopplungen und mit identischem Ausgabehash erfolgreich. Reale Mikrofon- und Meetingtests muss der jeweilige Benutzer mit seinen Geraeten durchfuehren.

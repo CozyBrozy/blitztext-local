@@ -19,21 +19,39 @@ public sealed class SettingsStore(string? settingsPath = null)
 
     public async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(SettingsPath))
+        cancellationToken.ThrowIfCancellationRequested();
+        try
         {
-            return new AppSettings();
+            await using var stream = File.OpenRead(SettingsPath);
+            var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
+            return Normalize(settings ?? new AppSettings());
         }
-
-        await using var stream = File.OpenRead(SettingsPath);
-        var settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
-        return Normalize(settings ?? new AppSettings());
+        catch (FileNotFoundException) { return new AppSettings(); }
+        catch (DirectoryNotFoundException) { return new AppSettings(); }
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-        await using var stream = File.Create(SettingsPath);
-        await JsonSerializer.SerializeAsync(stream, Normalize(settings), JsonOptions, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var destination = Path.GetFullPath(SettingsPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                await JsonSerializer.SerializeAsync(stream, Normalize(settings), JsonOptions, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporary, destination, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     private static AppSettings Normalize(AppSettings settings)

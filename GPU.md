@@ -1,5 +1,7 @@
 # Full large-v3 mit NVIDIA CUDA
 
+**Stand:** 10.11.2026 · **Herkunft:** Lokaler CUDA-Sprachtest und Startpruefung.
+
 Gepruefter Ablauf fuer den aktuellen Quellcode auf Windows 11 x64. Befehle aus dem Repo-Root mit PowerShell 7 ausfuehren. Zuerst ANLEITUNG.md und den Grundsetup mit `-FromSource -NoStart` ausfuehren. Vor Aenderungen an einer bestehenden Installation Aufnahme/Verarbeitung fertig werden lassen und die App ueber das Tray beenden. Diese Befehle beenden keine App automatisch.
 
 ## 1. Hardware und Pfade
@@ -12,6 +14,8 @@ $app = Join-Path $env:LOCALAPPDATA 'Programs/BlitztextLocal'
 $data = Join-Path $env:LOCALAPPDATA 'BlitztextLocal'
 $cache = Join-Path $env:LOCALAPPDATA 'BlitztextBuild/cuda-quality-setup'
 $sdk = Join-Path $env:LOCALAPPDATA 'BlitztextBuild/dotnet/dotnet.exe'
+if (!(Test-Path -LiteralPath $sdk)) { $sdk = (Get-Command dotnet -ErrorAction Stop).Source }
+if (!(& $sdk --list-sdks | Where-Object { $_ -match '^8\.' })) { throw '.NET-8-SDK aus dem Grundsetup fehlt.' }
 if (Get-Process -Name Blitztext.Windows -ErrorAction SilentlyContinue) { throw 'Blitztext zuerst selbst beenden.' }
 New-Item -ItemType Directory -Force $cache, (Join-Path $data 'models') | Out-Null
 if (!(Test-Path -LiteralPath (Join-Path $app 'Blitztext.Windows.exe'))) { throw 'Grundsetup fehlt.' }
@@ -74,14 +78,27 @@ $smoke = Join-Path $cache 'smoke'
 & $sdk publish tools/SmokeTest/SmokeTest.csproj -c Release -r win-x64 --self-contained true -o $smoke --source https://api.nuget.org/v3/index.json
 if ($LASTEXITCODE -ne 0) { throw 'CUDA-Testbuild fehlgeschlagen.' }
 foreach ($dll in $cudaDlls) { Copy-Item -LiteralPath $dll.FullName -Destination $smoke -Force }
-Add-Type -AssemblyName System.Speech
 $wav = Join-Path $cache 'synthetic-gpu-test.wav'
+$env:BLITZTEXT_SMOKE_WAV = $wav
+$synthesis = @'
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Speech
 $speaker = [System.Speech.Synthesis.SpeechSynthesizer]::new()
 try {
+    $voice = $speaker.GetInstalledVoices() | Where-Object {
+        $_.Enabled -and $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq 'de'
+    } | Select-Object -First 1
+    if (!$voice) { throw 'Deutsche Windows-Sprachausgabestimme fehlt.' }
+    $speaker.SelectVoice($voice.VoiceInfo.Name)
     $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
-    $speaker.SetOutputToWaveFile($wav, $format)
+    $speaker.SetOutputToWaveFile($env:BLITZTEXT_SMOKE_WAV, $format)
     $speaker.Speak('Dieser Computer verarbeitet unsere Sprache lokal.')
 } finally { $speaker.Dispose() }
+'@
+try {
+    & "$env:windir/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -Command $synthesis
+    if ($LASTEXITCODE -ne 0) { throw 'Synthetischer deutscher Testsatz konnte nicht erzeugt werden.' }
+} finally { Remove-Item Env:BLITZTEXT_SMOKE_WAV }
 $priorPath = $env:PATH
 try {
     $env:PATH = $smoke + [IO.Path]::PathSeparator + $priorPath
@@ -90,7 +107,7 @@ try {
 } finally { $env:PATH = $priorPath }
 ```
 
-Ausgabe muss `Runtime: Cuda`, NVIDIA-Geraet und den erkannten Satz zeigen. Zusaetzlich bei Bedarf mit `nvidia-smi` GPU-Speicherbelegung waehrend des Tests pruefen. Bei Speicherfehlern nicht still auf CPU oder ein kleineres Modell wechseln. Erst den Befund klaeren. Keine zweite grosse GPU-Modellinstanz parallel starten.
+Ausgabe muss `Runtime: Cuda`, `using CUDA0 backend` und den erkannten deutschen Satz in beiden Durchlaeufen zeigen. Bei Speicherfehlern den Befund klaeren, bevor die Modellauswahl geaendert wird. Nur eine grosse GPU-Modellinstanz gleichzeitig betreiben.
 
 ## 5. Modell aktivieren und starten
 
@@ -103,12 +120,31 @@ $settings = if (Test-Path -LiteralPath $settingsPath) {
     Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 } else { [pscustomobject]@{} }
 $settings | Add-Member -NotePropertyName LocalWhisperModelFile -NotePropertyValue 'ggml-large-v3.bin' -Force
-$settings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath ($settingsPath + '.tmp') -Encoding utf8
-Move-Item -LiteralPath ($settingsPath + '.tmp') -Destination $settingsPath -Force
+$settings | Add-Member -NotePropertyName LocalWhisperRequireCuda -NotePropertyValue $true -Force
+$reserve = Join-Path $env:USERPROFILE 'BlitztextLocalReserve'
+New-Item -ItemType Directory -Force $reserve | Out-Null
+$reserveModel = Join-Path $reserve 'ggml-large-v3.bin'
+if (!(Test-Path -LiteralPath $reserveModel)) {
+    $partial = $reserveModel + '.copy'
+    Copy-Item -LiteralPath $model -Destination $partial
+    if ((Get-FileHash -LiteralPath $partial).Hash -ne $modelHash) { throw 'Modellreserve hat falschen Hash.' }
+    Move-Item -LiteralPath $partial -Destination $reserveModel
+}
+if ((Get-FileHash -LiteralPath $reserveModel).Hash -ne $modelHash) { throw 'Vorhandene Modellreserve hat falschen Hash.' }
+$json = $settings | ConvertTo-Json -Depth 30
+$reserveSettings = Join-Path $reserve 'settings.json'
+if (Test-Path -LiteralPath $reserveSettings) {
+    Copy-Item -LiteralPath $reserveSettings -Destination ($reserveSettings + '.before-cuda-' + (Get-Date -Format 'yyyyMMddHHmmss'))
+}
+foreach ($path in $reserveSettings, $settingsPath) {
+    $temporary = $path + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    [IO.File]::WriteAllText($temporary, $json)
+    [IO.File]::Move($temporary, $path, $true)
+}
 Start-Process -FilePath (Join-Path $app 'Blitztext.Windows.exe') -ArgumentList '--background' -WindowStyle Hidden
 ```
 
-Danach startet der Benutzer selbst ein Gespraech. Der Status nennt `NVIDIA GPU (CUDA)` und zeigt den Rueckstand auch nach Stoppen bis Fertig. Die Standardbeschriftungen bleiben Du und Andere Teilnehmer. Eine spaetere individuelle Umbenennung eines Transkripts ist keine automatische Sprechererkennung.
+Nach dem Start das Protokoll `%APPDATA%/Blitztext/blitztext.log` pruefen. Fuer dieselbe Prozess-ID muessen beide Modellpfade auf `ggml-large-v3.bin` zeigen und `Backend PID=... NVIDIA GPU (CUDA)` erscheinen. Die App stellt fehlende Einstellungen und das gewaehlte Modell bei Bedarf aus der Reserve wieder her. Bei CUDA-Ausfall zeigt sie einen Fehler und sperrt die Aufnahme. Das Audiogeraet prueft der Benutzer mit einem eigenen Gespraech.
 
 ## Gesichertes Gespraech fortsetzen
 

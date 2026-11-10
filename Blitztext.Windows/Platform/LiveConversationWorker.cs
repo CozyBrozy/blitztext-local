@@ -9,7 +9,7 @@ public interface ILiveConversationAudio
     void Snapshot(string source, TimeSpan start, TimeSpan end, string output);
 }
 public sealed class LiveConversationWorker(ILiveConversationAudio audio, ConversationProcessor processor,
-    ConversationTranscriptFile transcript, string language)
+    ConversationTranscriptFile transcript, string language, string? speechDetectorPath = null)
 {
     public static readonly string[] Sources = ["Du", "Andere Teilnehmer"];
     private readonly Dictionary<string, TimeSpan> cursors = Sources.ToDictionary(s => s, _ => TimeSpan.Zero);
@@ -34,7 +34,7 @@ public sealed class LiveConversationWorker(ILiveConversationAudio audio, Convers
                 var normalized = System.IO.Path.Combine(folder, "normalized.wav");
                 audio.Snapshot(source, start, end, snapshot);
                 ConversationAudio.Normalize(snapshot, normalized);
-                var batch = ConversationAudio.PrepareLiveTracks(normalized, source, start, final);
+                var batch = ConversationAudio.PrepareLiveTracks(normalized, source, start, final, speechDetectorPath);
                 var entries = await processor.ProcessAsync(batch.Tracks, language, null, CancellationToken.None);
                 // Persist before advancing the cursor or displaying new text.
                 if (entries.Count > 0)

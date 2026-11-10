@@ -4,13 +4,14 @@ using System.Text.Json;
 using Blitztext.Core.Conversation;
 using Blitztext.Core.Transcription;
 using Blitztext.Windows.Platform;
-using Whisper.net.LibraryLoader;
 
 if (args.Length != 3)
     throw new ArgumentException("RecoverConversation <recovery-directory> <model-path> <new-output.md>");
 var directory = Path.GetFullPath(args[0]);
 var model = Path.GetFullPath(args[1]);
 var output = Path.GetFullPath(args[2]);
+using var engine = new LocalWhisperTranscriber(model, requireCuda: true);
+await engine.PreflightCudaAsync();
 var statePath = output + ".recovery.json";
 var work = Path.Combine(directory, "gpu-work");
 Directory.CreateDirectory(work);
@@ -25,9 +26,6 @@ var state = File.Exists(statePath)
 state.Validate(fingerprint, modelHash);
 if (File.Exists(output) && !File.Exists(statePath))
     throw new IOException("Vorhandenes Transkript ohne Wiederaufnahmestand wird nicht ueberschrieben.");
-// Fail visibly if CUDA is unavailable. Never silently spend hours on CPU in this recovery tool.
-RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cuda];
-using var engine = new LocalWhisperTranscriber(model);
 var processor = new ConversationProcessor(engine);
 var tracks = new List<ConversationTrack>();
 foreach (var input in inputs)

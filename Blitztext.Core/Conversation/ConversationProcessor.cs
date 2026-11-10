@@ -31,10 +31,22 @@ public static class ConversationFormatter
     public static string Format(IEnumerable<ConversationEntry> entries)
     {
         var text = new StringBuilder();
+        ConversationEntry? turn = null;
         foreach (var entry in entries.OrderBy(e => e.Start).ThenBy(e => e.Source, StringComparer.Ordinal))
-            text.AppendLine($"[{Stamp(entry.Start)} - {Stamp(entry.End)}] {entry.Source}: {entry.Text}");
+        {
+            if (turn is not null && string.Equals(turn.Source, entry.Source, StringComparison.Ordinal))
+                turn = turn with { End = entry.End > turn.End ? entry.End : turn.End, Text = turn.Text + " " + entry.Text };
+            else
+            {
+                if (turn is not null) AppendTurn(text, turn);
+                turn = entry;
+            }
+        }
+        if (turn is not null) AppendTurn(text, turn);
         return text.ToString();
     }
+    private static void AppendTurn(StringBuilder text, ConversationEntry turn)
+        => text.AppendLine($"[{Stamp(turn.Start)} - {Stamp(turn.End)}] {turn.Source}: {turn.Text}");
     private static string Stamp(TimeSpan time)
         => $"{(int)time.TotalHours:00}:{time.Minutes:00}:{time.Seconds:00}";
 }

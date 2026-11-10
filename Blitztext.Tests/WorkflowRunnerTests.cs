@@ -41,8 +41,10 @@ public sealed class WorkflowRunnerTests
     public async Task MissingModelFailsLocally()
     {
         var path = Audio();
-        using var engine = new LocalWhisperTranscriber(Path.Combine(Path.GetTempPath(), Guid.NewGuid()+".bin"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TranscribeAsync(path, "de", default));
+        var missingModel = Path.Combine(Path.GetTempPath(), Guid.NewGuid()+".bin");
+        using var engine = new LocalWhisperTranscriber(missingModel);
+        var error = await Assert.ThrowsAsync<FileNotFoundException>(() => engine.TranscribeAsync(path, "de", default));
+        Assert.Equal(missingModel, error.FileName);
         File.Delete(path);
     }
     private static string Audio()
