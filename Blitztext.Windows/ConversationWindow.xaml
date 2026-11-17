@@ -15,6 +15,12 @@
    <TextBlock x:Name="StatusText" Text="Bereit" TextWrapping="Wrap" Margin="0,0,0,10"/>
   </StackPanel>
   <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+   <TextBlock Text="Transkriptname" Margin="0,0,0,4"/>
+   <DockPanel Margin="0,0,0,8">
+    <Button x:Name="RenameButton" DockPanel.Dock="Right" Content="Namen speichern" Click="Rename_Click" Style="{StaticResource Action}" IsEnabled="False" Margin="8,0,0,0"/>
+    <TextBox x:Name="TranscriptTitleBox" MaxLength="120" Padding="8,6" VerticalContentAlignment="Center"
+     AutomationProperties.Name="Transkriptname" ToolTip="Nach dem Stoppen einen Namen speichern. Gleiche Namen erhalten einen freien Zusatz."/>
+   </DockPanel>
    <TextBlock x:Name="SavedText" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
    <TextBlock x:Name="TranscriptLinks" Visibility="Collapsed" TextWrapping="Wrap">
     <Hyperlink Click="OpenTranscript_Click" Foreground="#5635B2"><Run x:Name="TranscriptName"/></Hyperlink>

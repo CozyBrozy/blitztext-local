@@ -76,6 +76,8 @@ public partial class ConversationWindow : Window
                 TranscriptBox.Clear();
                 SavedText.Text = "";
                 SetTranscriptLink(null);
+                RenameButton.IsEnabled = false;
+                TranscriptTitleBox.Clear();
                 try
                 {
                     recorder = new ConversationRecorder();
@@ -194,6 +196,8 @@ public partial class ConversationWindow : Window
             stopPolling = null;
             liveTask = null;
             busy = false;
+            RenameButton.IsEnabled = transcript is not null && File.Exists(transcript.Path);
+            if (RenameButton.IsEnabled) SetTranscriptLink(transcript!.Path);
             release();
             RecordButton.Content = "Gespräch starten";
         }
@@ -210,6 +214,18 @@ public partial class ConversationWindow : Window
     private void Copy_Click(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrWhiteSpace(TranscriptBox.Text)) System.Windows.Clipboard.SetText(TranscriptBox.Text);
+    }
+    private void Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || transcript is null) return;
+        try
+        {
+            transcript.Rename(TranscriptTitleBox.Text);
+            SetTranscriptLink(transcript.Path);
+            TranscriptTitleBox.Text = Path.GetFileNameWithoutExtension(transcript.Path);
+            StatusText.Text = "Transkriptname gespeichert.";
+        }
+        catch (Exception ex) { StatusText.Text = "Name konnte nicht gespeichert werden: " + ex.Message; }
     }
     private void SetDevices(string microphone, string output) =>
         DevicesText.Text = $"Mikrofon: {microphone}{Environment.NewLine}Computerton: {output}";
